@@ -12,25 +12,31 @@ class ShiftParser:
     level = -1
     found_tokens = []
     types = ('left shift', 'no shift', 'right shift', 'content')
+    input_text = ""
 
-    def addToken(self, type, chars_consumed, **kwargs):
+    def __init__(self, input_text):
+        self.input_text = input_text
+
+    def __iter__(self):
+        return (token for token in self.convert())
+
+    def createToken(self, type, chars_consumed, **kwargs):
         if type in self.types:
             kwargs['type'] = type
             if self.save_coords:
                 kwargs['coords'] = "%s:%s" % (self.line_count, self.column_count)
             self.column_count += chars_consumed
-            self.found_tokens.append(kwargs)
+            return kwargs
         else:
             raise TypeError("Type '%s' not known" % type)
 
-    def convert(self, input_text):
+    def convert(self):
         self.line_count = 0
         self.column_count = 0
         self.position = 0
         self.level = -1
-        self.found_tokens = []
 
-        for line in input_text.splitlines():
+        for line in self.input_text.splitlines():
             if line.strip() != "":
                 if self.level == -1:
                     count = 0
@@ -53,22 +59,25 @@ class ShiftParser:
                             break
                     line = line[consumed:]
                     if consumed < self.level:
-                        self.addToken('left shift', consumed,
+                        yield self.createToken('left shift', consumed,
                                       count=self.level - consumed)
                         self.level = consumed
                     elif consumed == self.level:
-                        self.addToken('no shift', consumed)
+                        yield self.createToken('no shift', consumed)
                     else:  # consumed == self.level + 1
                         self.level += 1
-                        self.addToken('right shift', consumed)
-                self.addToken('content', len(line), text=line)
+                        yield self.createToken('right shift', consumed)
+                yield self.createToken('content', len(line), text=line)
             self.line_count += 1
             self.column_count = 0
-        return self.found_tokens
 
 
 if __name__ == "__main__":
     with open(sys.argv[1]) as file:
-        tokens = ShiftParser().convert(file.read())
-        with open(sys.argv[1] + ".tokens.json", mode="w") as output:
+        tokens = [token for token in ShiftParser(file.read())]
+        try:
+            target = sys.argv[2]
+        except IndexError:
+            target = sys.argv[1] + ".tokens.json"
+        with open(target, mode="w") as output:
             output.write(json.dumps(tokens))
